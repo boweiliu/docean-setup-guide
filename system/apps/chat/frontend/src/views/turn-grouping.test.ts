@@ -1915,4 +1915,34 @@ describe("secret requests", () => {
     const sections = run(events);
     expect(verdictFor(sections[0].items[0] as PermissionItem, "secret-1")).toBe("stored");
   });
+
+  // The agent is woken by the secret notice and a background task's notice together: the step
+  // shows once, under the notice, not also as an empty node in the verdict's section.
+  it("carries an open step past a secret notice and a notice that follows it without an empty node", () => {
+    const events = [
+      userMsg("2026-05-01T01:00:00Z", "connect me to the widget API", "u1"),
+      tkMsg("2026-05-01T01:00:01Z", "tk start s1", "c-s1"),
+      result("2026-05-01T01:00:01Z", "c-s1", startOut("s1", "Connect to the widget API")),
+      secretMsg("2026-05-01T01:00:02Z", "sec"),
+      secretResult("2026-05-01T01:00:02Z", "sec", "secret-1", "svc"),
+      userMsg(
+        "2026-05-01T01:00:03Z",
+        "Secret stored: data/.secrets/svc.env (A) (secret: stored, request_id: secret-1)",
+        "u-res",
+        { display: "secret_resolution", resolution: "stored", request_id: "secret-1" },
+      ),
+      notice("2026-05-01T01:00:04Z", "n1"),
+      workMsg("2026-05-01T01:00:05Z", "Bash", "w-after"),
+      result("2026-05-01T01:00:05Z", "w-after", "ok"),
+    ];
+    const sections = run(events, /* idle */ false);
+    expect(sections.map((s) => s.user_event?.event_id ?? null)).toEqual(["u1", null, "n1"]);
+    expect(verdictFor(sections[0].items[1] as PermissionItem, "secret-1")).toBe("stored");
+    expect(sections[1].items).toEqual([]);
+    const live = stepItems(sections[2].items);
+    expect(live.map((s) => s.ticket_id)).toEqual(["s1"]);
+    expect(live[0].is_carryover).toBe(true);
+    expect(live[0].is_frontier).toBe(true);
+    expect(live[0].events.map((e) => e.event_id)).toEqual(["a-w-after"]);
+  });
 });
