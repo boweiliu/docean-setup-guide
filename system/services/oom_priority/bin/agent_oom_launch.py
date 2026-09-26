@@ -70,13 +70,12 @@ Self-contained beyond the stdlib-only ``oom_priority`` package (imported via a
 
 import logging
 import os
+import platform
 import shutil
 import sys
 from pathlib import Path
 
-sys.path.insert(
-    0, str(Path(__file__).resolve().parents[1] / "src")
-)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from oom_priority import bands
 from oom_priority.agent_identity import is_chat_agent, is_primary_agent, is_worker_agent
@@ -123,28 +122,50 @@ def _tag_self() -> None:
     )
 
 
+# The npm platform package and target triple ``bin/codex.js`` picks for each
+# (``sys.platform``, ``platform.machine()``), so the wrapper execs the same native
+# binary the entry point would.
+_CODEX_NATIVE_TARGETS = {
+    ("linux", "x86_64"): ("linux-x64", "x86_64-unknown-linux-musl"),
+    ("linux", "aarch64"): ("linux-arm64", "aarch64-unknown-linux-musl"),
+    ("darwin", "x86_64"): ("darwin-x64", "x86_64-apple-darwin"),
+    ("darwin", "arm64"): ("darwin-arm64", "aarch64-apple-darwin"),
+}
+
+
 def _npm_codex_native_launch() -> tuple[Path, dict[str, str]] | None:
     """The native binary behind an npm-installed ``codex``, and the environment
     its npm entry point would give it; None when ``codex`` is not that install.
 
-    npm installs only the platform package matching this machine, so exactly one
-    native binary is expected. An npm entry point without one is reported on
-    stderr before returning None, since the fallback leaves codex unattributed."""
+    An npm entry point whose native binary for this machine is missing is
+    reported on stderr before returning None, since the fallback leaves codex
+    unattributed."""
     entry_point = shutil.which("codex")
     if entry_point is None:
         return None
     resolved_entry_point = Path(entry_point).resolve()
+    if resolved_entry_point.name != "codex.js":
+        return None
     package_root = resolved_entry_point.parents[1]
-    natives = list(package_root.glob("node_modules/@openai/codex-*/vendor/*/bin/codex"))
-    if len(natives) != 1:
-        if resolved_entry_point.name == "codex.js":
-            _logger.warning(
-                "agent_oom_launch: expected one native codex binary in %s, found %s;"
-                " launching the npm entry point, so an OOM kill of codex will not"
-                " be attributed to this agent",
-                package_root,
-                [str(native) for native in natives],
-            )
+    target = _CODEX_NATIVE_TARGETS.get((sys.platform, platform.machine()))
+    candidates = []
+    if target is not None:
+        package, triple = target
+        candidates = [
+            package_root
+            / f"node_modules/@openai/codex-{package}/vendor/{triple}/bin/codex",
+            package_root / f"vendor/{triple}/bin/codex",
+        ]
+    native = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if native is None:
+        _logger.warning(
+            "agent_oom_launch: no native codex binary for %s/%s at %s;"
+            " launching the npm entry point, so an OOM kill of codex will not"
+            " be attributed to this agent",
+            sys.platform,
+            platform.machine(),
+            [str(candidate) for candidate in candidates],
+        )
         return None
     env = {
         key: value
@@ -153,7 +174,7 @@ def _npm_codex_native_launch() -> tuple[Path, dict[str, str]] | None:
     }
     env["CODEX_MANAGED_BY_NPM"] = "1"
     env["CODEX_MANAGED_PACKAGE_ROOT"] = str(package_root)
-    return natives[0], env
+    return native, env
 
 
 def main() -> None:

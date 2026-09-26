@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import platform
 import subprocess
 import sys
 from pathlib import Path
@@ -196,7 +197,7 @@ def test_wrapper_execs_named_harness_forwarding_args_after_tagging(
 
     assert result.returncode == 0, result.stderr
     assert args_out.read_text().splitlines() == ["--settings", "foo", "--resume", "bar"]
-    assert "expected one native codex binary" not in result.stderr
+    assert "no native codex binary" not in result.stderr
     # The wrapper recorded its own pid (which became the harness's) as agent u1.
     # OOM_PRIORITY_RUNTIME_DIR is the runtime dir itself (the override is used
     # verbatim), so the registry lives directly under it.
@@ -248,9 +249,22 @@ def test_wrapper_refuses_with_no_harness_argument(tmp_path: Path) -> None:
     assert "missing harness binary" in result.stderr
 
 
-_NPM_CODEX_NATIVE = (
-    "node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
-)
+_NPM_CODEX_PACKAGE, _NPM_CODEX_TRIPLE = wrapper._CODEX_NATIVE_TARGETS[
+    (sys.platform, platform.machine())
+]
+_NPM_CODEX_NATIVE = f"node_modules/@openai/codex-{_NPM_CODEX_PACKAGE}/vendor/{_NPM_CODEX_TRIPLE}/bin/codex"
+
+
+def _write_fake_native(native: Path, native_report: Path) -> None:
+    """A fake native codex binary that writes its own pid, the codex install
+    environment it was given, and its args to ``native_report``."""
+    native.parent.mkdir(parents=True)
+    native.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$$" "$CODEX_MANAGED_BY_NPM" "$CODEX_MANAGED_PACKAGE_ROOT" "$@"'
+        f" > {native_report}\n"
+    )
+    native.chmod(0o755)
 
 
 def _fake_npm_codex_install(
@@ -259,17 +273,10 @@ def _fake_npm_codex_install(
     """A global npm install of codex laid out like the real one, returning its
     package root. ``<prefix>/bin/codex`` links to the package's ``bin/codex.js``,
     which runs the native binary at ``native_in_package`` as a child process, as
-    the real entry point does. The native binary writes its own pid, the codex
-    install environment it was given, and its args to ``native_report``."""
+    the real entry point does, reporting to ``native_report``."""
     package_root = prefix / "lib" / "node_modules" / "@openai" / "codex"
     native = package_root / native_in_package
-    native.parent.mkdir(parents=True)
-    native.write_text(
-        "#!/bin/sh\n"
-        'printf "%s\\n" "$$" "$CODEX_MANAGED_BY_NPM" "$CODEX_MANAGED_PACKAGE_ROOT" "$@"'
-        f" > {native_report}\n"
-    )
-    native.chmod(0o755)
+    _write_fake_native(native, native_report)
     entry_point = package_root / "bin" / "codex.js"
     entry_point.parent.mkdir(parents=True)
     # The trailing exit keeps the shell from exec'ing its last command in place.
@@ -309,8 +316,13 @@ def _launch_codex(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+@pytest.mark.parametrize(
+    "native_in_package",
+    [_NPM_CODEX_NATIVE, f"vendor/{_NPM_CODEX_TRIPLE}/bin/codex"],
+    ids=["platform-package", "package-vendor-dir"],
+)
 def test_a_shed_npm_installed_codex_is_attributed_to_its_agent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_in_package: str
 ) -> None:
     """The pid earlyoom kills when it sheds a codex agent is the pid the wrapper
     registered, so the kill hook records the shed against that agent and the
@@ -319,7 +331,9 @@ def test_a_shed_npm_installed_codex_is_attributed_to_its_agent(
     host = tmp_path / "host"
     _write_agent_record(host, "w1", is_worker=True)
     native_report = tmp_path / "native_report.txt"
-    package_root = _fake_npm_codex_install(tmp_path / "npm", native_report)
+    package_root = _fake_npm_codex_install(
+        tmp_path / "npm", native_report, native_in_package
+    )
     env = _npm_codex_launch_env(tmp_path / "npm", runtime, host)
 
     launch = _launch_codex(env)
@@ -375,4 +389,35 @@ def test_npm_codex_whose_native_binary_moved_still_launches_through_the_entry_po
     ]
     assert len(registered_pids) == 1
     assert int(harness_pid) not in registered_pids
-    assert "expected one native codex binary" in launch.stderr
+    assert "no native codex binary" in launch.stderr
+
+
+def test_npm_codex_with_another_platforms_binary_installed_launches_this_machines(
+    tmp_path: Path,
+) -> None:
+    """A package holding another platform's native binary too (an install with
+    npm's ``--os``/``--cpu`` overrides) still launches the one for this machine,
+    as the entry point would, and registers it."""
+    runtime = tmp_path / "rt"
+    native_report = tmp_path / "native_report.txt"
+    package_root = _fake_npm_codex_install(tmp_path / "npm", native_report)
+    other_package, other_triple = next(
+        target
+        for target in wrapper._CODEX_NATIVE_TARGETS.values()
+        if target != (_NPM_CODEX_PACKAGE, _NPM_CODEX_TRIPLE)
+    )
+    other_report = tmp_path / "other_native_report.txt"
+    _write_fake_native(
+        package_root
+        / f"node_modules/@openai/codex-{other_package}/vendor/{other_triple}/bin/codex",
+        other_report,
+    )
+
+    launch = _launch_codex(
+        _npm_codex_launch_env(tmp_path / "npm", runtime, tmp_path / "host")
+    )
+
+    assert launch.returncode == 0, launch.stderr
+    assert not other_report.exists()
+    harness_pid = int(native_report.read_text().splitlines()[0])
+    assert (runtime / "agent_pids" / f"{harness_pid}.json").exists()
