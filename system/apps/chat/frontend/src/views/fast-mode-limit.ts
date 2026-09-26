@@ -14,10 +14,10 @@
  *
  * A turn is a message the message-kind registry marks as one -- a message the user sent, or a
  * status line between turns -- so "5 turns" means five exchanges the user can see. The timeline
- * also breaks at system chips, notices and permission verdicts, but none of those is a turn the
- * user took: the registry marks chips and notices as no turn, and verdicts are excluded on top of
- * that (the app talking to itself). So are the turns of a seeded chat's seed segment: the Mind
- * app wrote those before any agent ran, so they bought no fast turns.
+ * also breaks at system chips, notices and permission and secret verdicts, but none of those is a
+ * turn the user took: the registry marks chips and notices as no turn, and verdicts are excluded on
+ * top of that (the app talking to itself). So are the turns of a seeded chat's seed segment: the
+ * Mind app wrote those before any agent ran, so they bought no fast turns.
  */
 
 import m from "mithril";
@@ -34,7 +34,7 @@ import { hasFastModeLimit } from "../models/HarnessCatalog";
 import { getChatFastMode, setFastMode } from "../models/ModelSettings";
 import type { TranscriptEvent } from "../models/Response";
 import { SEED_SOURCE } from "../models/Response";
-import { isTurnUserMessage, resolutionOf } from "./message-classification";
+import { isTurnUserMessage, resolutionOf, secretResolutionOf } from "./message-classification";
 
 // The chat whose switch raised the notice, or null while none is showing.
 let noticeChatId: string | null = null;
@@ -52,7 +52,7 @@ export function countUserTurns(events: readonly TranscriptEvent[]): number {
     if (!isTurnUserMessage(event)) {
       continue;
     }
-    if (resolutionOf(event) !== null) {
+    if (resolutionOf(event) !== null || secretResolutionOf(event) !== null) {
       continue;
     }
     count = count + 1;
