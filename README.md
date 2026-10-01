@@ -1,52 +1,66 @@
-# Your workspace
+<p align="center">
+  <img alt="DigitalOcean Studio Setup Guide" src="template.svg" width="480">
+</p>
 
-This folder is your mind's home: everything it knows, everything it builds,
-and the machinery that keeps it running.
+# DigitalOcean Studio Setup Guide
 
-## Creations
+<p align="center">
+  <a href="https://boweiliu.github.io/open-in-minds/?git_url=https://github.com/boweiliu/docean-setup-guide"><img alt="Open in Mind" height="64" src="https://img.shields.io/badge/Open%20in%20Mind-D8D1C0?style=for-the-badge"></a>
+</p>
 
-Broadly, in Mind you make "creations". These can be "code" (apps, skills, and
-the services behind them) or "data" (documents, images, notes).
+Didn't work? Create a Mind workspace and paste this to your agent:
+` /use-template https://github.com/boweiliu/docean-setup-guide`
 
-Mind makes this easier by defining some conventions for the common things
-you'll want to make:
+## Why you care
 
-1. an "app" - something you can open as a tab and interact with
-2. a "skill" - teaches your mind how to do work you care about. A skill that
-   is automatically run on a schedule is called an "automation" (the
-   machinery that runs them lives in `system/libs/automations/`; the weekly
-   Caretaker is the built-in example)
-3. some "data" - documents, images, notes, or data created by your apps and
-   skills
-4. some "customizations" - changes to any of the above. Everything in Mind
-   can be modified by you!
+Reading a setup guide in a GitHub tab while running its commands in a
+terminal means constant tab-switching, and copy-pasting multi-line commands
+out of rendered markdown is error-prone. This turns the
+[boweiliu/setup-docean-studio](https://github.com/boweiliu/setup-docean-studio)
+guide -- running Imbue Studio on your own DigitalOcean droplets -- into a
+window with the whole guide on one sidebar and a one-click way to hand any
+command to an agent.
 
-## What's here
+## How to use it
 
-- `apps/` - Everything you can open as a tab: the built-in apps (chat, the
-  terminal, the file viewer, the browser) and the apps your mind builds for you. (A shortcut
-  to `system/apps/`.)
-- `skills/` - Everything your mind knows how to do: the built-in skills and
-  the ones it has learned for you. (A shortcut to `.agents/skills/`.)
-- `data/` - Your workspace's data: documents and project folders, files
-  you've uploaded, your mind's memories, and each app's stored data.
-- `docs/` - Guides to this workspace: what it is, how it works, and a history
-  of where it came from.
-- `system/` - The machinery that runs the workspace: the apps themselves,
-  background services, scripts, and configuration. You can look around (every
-  folder has a README), and your mind maintains it for you.
+Open the app and read down the sidebar in order: an overview, five numbered
+runbooks (steps 4a and 4b run in parallel -- wire whichever client you want),
+and two decision-log pages explaining what was tried and didn't work. Every
+command block has two buttons:
 
-A few housekeeping files live alongside them:
+- **Copy** -- puts the command on your clipboard, same as selecting the text.
+- **Copy to agent chat** -- drops the command into your open Mind chat,
+  unsent, so you can review it and have an agent run or adapt it for you
+  instead of retyping it into a terminal yourself.
 
-- `README.md` - This file.
-- `CLAUDE.md` - The standing instructions your mind follows.
-- `pyproject.toml` and `uv.lock` - The Python project definition; the tooling
-  requires them at the top level.
+The Overview page also has a "Run the whole thing" block: one prompt that
+tells an agent to run runbooks 01-05 end to end and check each one's Verify
+output before moving on, and a "Known issues in this guide" box listing bugs
+found in the source repo's scripts while this app was built.
 
-## Where things are kept safe
+## Ideas for making it yours
 
-The workspace is a git repository: code and configuration changes are
-committed as your mind works. Everything under `data/` is deliberately kept
-out of git (it can be large, personal, or both) and is protected by the
-workspace's continuous encrypted backup instead, along with the rest of the
-workspace. See `docs/` for details.
+- Point it at a different guide entirely: swap the markdown under
+  `system/apps/docean_setup_guide/src/docean_setup_guide/assets/docs/` for
+  your own runbooks and update the `PAGES` list in `runner.py` -- the
+  renderer, the link-rewriting, and the copy / copy-to-agent-chat buttons all
+  come along for free.
+- Once the upstream guide's known issues are fixed, delete or update the
+  `KNOWN_ISSUES` list in `runner.py` so the callout doesn't go stale.
+- Add a "mark step done" checkbox per page if you want the app to track your
+  progress through the guide, not just render it.
+- Wire up a way to re-pull the source guide automatically (a refresh button,
+  or a scheduled job) instead of re-copying the markdown by hand.
+- Swap the dark color scheme for a light one, or make it follow the system
+  theme -- it's one `<style>` block in `runner.py`.
+
+## What this is
+
+This repository is a published **minds template**: a clean, bootable
+snapshot of what a mind built, ready to adapt into your own. It is NOT the
+generic workspace template -- it is this specific project.
+
+[`template.md`](template.md) is the full manifest -- what it is, how it
+works, what it needs to run, and what to adapt -- with the
+machine-readable half (recipe, requirements, and the environment it needs
+installed) in [`template.toml`](template.toml).

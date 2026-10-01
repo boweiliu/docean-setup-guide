@@ -1,0 +1,91 @@
+# Machine-readable manifest for this template. The sibling
+# template.md holds the prose, the Requirements list, and the two
+# append-only history logs; this file is authoritative for everything
+# below. Both are generated together -- validate_template.py fails if
+# they disagree.
+format = "v2"
+
+[template]
+slug = "docean-setup-guide"
+title = "DigitalOcean Studio Setup Guide"
+description = "A walkthrough app for running Imbue Studio on your own DigitalOcean droplets, built alongside the boweiliu/setup-docean-studio guide it renders"
+thumbnail = "template.svg"
+version = "v1"
+
+# How this template is DERIVED from the workspace it came from. An
+# update re-runs this recipe rather than diffing two repos, which is what
+# keeps an exclusion excluded even though the thing still exists upstream.
+[recipe]
+include = ["system/apps/docean_setup_guide", "system/supervisord.conf.d/docean-setup-guide.conf"]
+data_include = []
+# FILL IN: one entry per deliberate exclusion (paths left out, and
+# features stripped from an included path). Leave [] if nothing was.
+exclude = []
+# FILL IN: one entry per published-version modification, stated as a RULE
+# and NEVER the removed value -- the point of a modification is that the
+# value does not ship. e.g. "replace the hardcoded team channel with a
+# neutral default". Leave [] if there were none.
+modification_rules = []
+
+# Everything an adopter must deal with before this is really theirs.
+# One list -- but each entry's KIND says how it is handled, because the
+# two are handled at different times by different mechanisms:
+#
+#   permission / secret / llm = ACTIVATION. The adopting agent acts on
+#   these FIRST and BY ITSELF, initiating each latchkey permission
+#   request and each secret request before asking the user anything.
+#   Every one of them must have a matching requires_ line in template.md
+#   and vice versa -- the validator checks that, because an adopter once
+#   never got prompted for a permission the app needed.
+#
+#   The [[requirements.secret]] entries below were AGGREGATED from the
+#   included apps' app.toml [[secrets]] and skills' SKILL.md secrets:
+#   declarations, plus every data/.secrets/<file>.env the snapshot's
+#   mcp-servers.json and supervisord programs run under. Fix a wrong one
+#   at its declaration, not here.
+#
+#   adaptation = worked through INTERACTIVELY with the user afterwards.
+#   Prose on both sides, so it is not cross-checked.
+#
+# FILL IN, e.g.:
+#   [[requirements.permission]]
+#   scope = "slack-api"
+#   permission = "slack-read-all"
+#
+#   [requirements.llm]
+#   method = "keyed"   # keyed (an API key, e.g. ANTHROPIC_API_KEY) | keyless (a subscription CLI, e.g. claude -p)
+#
+#   [[requirements.adaptation]]
+#   summary = "the digest channel is hardcoded"
+#   resolution = "ask the user which channel to watch"
+[requirements]
+
+[[requirements.adaptation]]
+summary = "this template is tied to the boweiliu/setup-docean-studio guide's content and structure"
+resolution = "useful as-is to someone following that guide, or adapt the renderer (markdown bundling + markdown-it-py + copy/copy-to-agent-chat buttons) for a different guide; the Overview page's Known-issues callout (KNOWN_ISSUES in runner.py) is a hardcoded snapshot that should be deleted or updated once those upstream bugs are fixed"
+
+[[requirements.adaptation]]
+summary = "the guide markdown is bundled at publish time, not fetched live from GitHub"
+resolution = "re-copy the markdown under src/docean_setup_guide/assets/docs/ from the source repo to pick up upstream changes; there is no automatic sync"
+
+# What the included code needs INSTALLED. apt takes bare names: versions
+# are a function of the apt snapshot timestamp, so replaying names at the
+# adopter's timestamp yields versions consistent with the rest of their
+# environment. The other sources are not snapshot-pinned, so for them the
+# recorded version IS the pin (name = version).
+#
+# FILL IN from what the included code actually needs, e.g.:
+#   apt = ["poppler-utils"]
+#   [environment.npm_global]
+#   "@slack/cli" = "2.1.0"
+#   [environment.uv_tools]
+#   yt-dlp = "2026.7.1"
+#   [environment.cargo_crates]
+#   fd-find = "9.0.0"
+#
+# For an install with no package database (a URL-fetched binary, a browser),
+# ship a system/scripts/env.d/<NNNN>-<slug>-<name>.sh unit with NNNN >= 2000,
+# include it in the recipe above, and list it in env_d_units.
+[environment]
+apt = []
+env_d_units = []

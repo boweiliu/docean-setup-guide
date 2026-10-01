@@ -1,0 +1,11 @@
+name = "docean-setup-guide"
+display_name = "Studio on DO Setup Guide"
+icon = "icon.svg"
+priority = "user"
+program = "docean-setup-guide"
+
+# How update-app boots a throwaway preview of this app: on a free port, over a
+# scratch copy of its data (see .agents/skills/update-app/scripts/preview_app.py).
+[preview]
+env = {DOCEAN_SETUP_GUIDE_PORT = "{port:main}", DOCEAN_SETUP_GUIDE_HOST = "{host}", DOCEAN_SETUP_GUIDE_DATA_DIR = "{copy:data}"}
+copies = {data = "data/.apps/docean-setup-guide"}
