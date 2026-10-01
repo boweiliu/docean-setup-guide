@@ -2,7 +2,7 @@
 title: "DigitalOcean Studio Setup Guide"
 description: "A walkthrough app for running Imbue Studio on your own DigitalOcean droplets, built alongside the boweiliu/setup-docean-studio guide it renders"
 thumbnail: "template.svg"
-version: v1
+version: v2
 format: v2
 ---
 
@@ -30,9 +30,11 @@ which drops the command straight into the user's open chat, unsent, so an
 agent can run or adapt it for them instead of the user retyping it by hand.
 The Overview page also carries a single prompt block that hands an agent the
 whole guide to run end to end, runbook by runbook, checking each one's Verify
-output before moving on rather than assuming success. The app has no backend
-state and no external calls -- it is a pure, read-only renderer the user opens
-as a window.
+output before moving on rather than assuming success, and a "Sync now" button:
+the app keeps its copy of the guide up to date on its own (a background
+refresh whenever the cache is more than 6 hours old, plus the manual button
+for an immediate pull), falling back to a bundled offline copy if GitHub is
+unreachable.
 
 ## How it works
 
@@ -44,13 +46,19 @@ from the original mind onto a clean default-workspace-template base):
 
 - `system/apps/docean_setup_guide` is the whole app: a Flask lib (one route,
   `/guide/<slug>`, plus the standard `/`, `/health`, and the shared shell
-  static modules) that renders the bundled guide markdown with
-  `markdown-it-py`, served by the threaded Werkzeug dev server. The guide's
-  source markdown lives alongside the code at
-  `src/docean_setup_guide/assets/docs/` (a copy of `setup-docean-studio`'s
-  `README.md`, `runbooks/*.md`, and `decisions/*.md`) -- it is rendered at
-  request time, not fetched live, so the app works with no network access and
-  no GitHub credentials. In-guide markdown links between runbooks are rewritten
+  static modules, plus `/sync`) that renders the guide markdown with
+  `markdown-it-py`, served by the threaded Werkzeug dev server. The bundled
+  copy at `src/docean_setup_guide/assets/docs/` (a copy of
+  `setup-docean-studio`'s `README.md`, `runbooks/*.md`, and `decisions/*.md`)
+  is the day-one / offline fallback; the app otherwise keeps a synced copy
+  under its `DATA_DIR` (`data/.apps/docean-setup-guide/docs/` by default),
+  refreshed from `raw.githubusercontent.com/boweiliu/setup-docean-studio/main/`
+  in a background thread whenever a page view finds the cache older than 6
+  hours (`SYNC_INTERVAL_SECONDS` in `runner.py`), or immediately via the
+  Overview page's "Sync now" button. A fetch failure for any one page (offline,
+  GitHub down, a file renamed upstream) just keeps whatever was already
+  cached or bundled for that page -- one bad fetch never takes the guide
+  down. In-guide markdown links between runbooks are rewritten
   to the app's own `/guide/<slug>` routes; links to paths the app does not
   render (`scripts/`, `provider/`, `decisions/` as a directory) are rewritten
   to point at the source GitHub repo instead. The Overview page also carries a
@@ -65,7 +73,7 @@ from the original mind onto a clean default-workspace-template base):
 
 ## Recipe
 
-This template is version `v1`. It is not a fork of the
+This template is version `v2`. It is not a fork of the
 workspace it came from -- it is DERIVED from it by a recipe: include these
 paths, leave these out, apply these published-version rules. An update re-runs
 the recipe against the current workspace and publishes the result as the next
@@ -89,10 +97,11 @@ theirs. Two kinds of entry, handled at different times:
   interactively with the user, after activation.
 
 
-**Activation:** none. This app makes no external calls, needs no permissions,
-and declares no secrets -- it only reads its own bundled markdown files and
-renders them. "No requirements -- runs as published, with no external
-permissions or secrets."
+**Activation:** none. The app makes unauthenticated GET requests to
+`raw.githubusercontent.com` to sync the guide, which needs no permission grant
+or secret -- GitHub serves public raw file content with no credential. It
+needs no latchkey permission and declares no secrets. "No requirements --
+runs as published, with no external permissions or secrets."
 
 **Adaptation:**
 
@@ -109,10 +118,10 @@ permissions or secrets."
   scripts at the time this template was published. It is a hardcoded snapshot,
   not a live check -- delete or update it once (if) those bugs are fixed
   upstream, or it will mislead a reader.
-- The guide's own markdown is bundled, not fetched live, so an update to
-  `setup-docean-studio` upstream will not reach this app automatically. Re-copy
-  the markdown under `src/docean_setup_guide/assets/docs/` from the source repo
-  when you want to pick up changes.
+- The app syncs only from `boweiliu/setup-docean-studio`'s `main` branch,
+  hardcoded as `GITHUB_RAW_BASE` in `runner.py`. Pointing it at a different
+  guide (see the first bullet) means changing that constant too, not just the
+  bundled fallback copy.
 
 ## Environment
 
@@ -163,6 +172,8 @@ appends one entry per version (newest last); earlier entries are never rewritten
 This is distinct from "Adaptation history" below, which is the ADOPTERS' log.
 
 ### v1 (2026-10-01) -- first publish: the guide-reader app, rendering the setup-docean-studio guide with copy / copy-to-agent-chat buttons on every command, plus a run-the-whole-guide prompt block on the Overview page.
+
+### v2 (2026-10-01) -- the guide now syncs itself from the source repo's main branch (a background refresh plus a manual "Sync now" button) instead of needing a manual re-copy of the markdown; the bundled copy is now only the offline/day-one fallback.
 
 ## Adaptation history
 

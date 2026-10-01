@@ -36,21 +36,21 @@ command block has two buttons:
 The Overview page also has a "Run the whole thing" block: one prompt that
 tells an agent to run runbooks 01-05 end to end and check each one's Verify
 output before moving on, and a "Known issues in this guide" box listing bugs
-found in the source repo's scripts while this app was built.
+found in the source repo's scripts while this app was built. The guide itself
+stays in sync with GitHub on its own (a background check, plus a "Sync now"
+button for an immediate pull) -- nobody has to remember to re-copy anything.
 
 ## Ideas for making it yours
 
-- Point it at a different guide entirely: swap the markdown under
-  `system/apps/docean_setup_guide/src/docean_setup_guide/assets/docs/` for
-  your own runbooks and update the `PAGES` list in `runner.py` -- the
-  renderer, the link-rewriting, and the copy / copy-to-agent-chat buttons all
-  come along for free.
+- Point it at a different guide entirely: swap the bundled markdown under
+  `system/apps/docean_setup_guide/src/docean_setup_guide/assets/docs/`,
+  update the `PAGES` list and the `GITHUB_RAW_BASE` constant in `runner.py` --
+  the renderer, the sync, the link-rewriting, and the copy /
+  copy-to-agent-chat buttons all come along for free.
 - Once the upstream guide's known issues are fixed, delete or update the
   `KNOWN_ISSUES` list in `runner.py` so the callout doesn't go stale.
 - Add a "mark step done" checkbox per page if you want the app to track your
   progress through the guide, not just render it.
-- Wire up a way to re-pull the source guide automatically (a refresh button,
-  or a scheduled job) instead of re-copying the markdown by hand.
 - Swap the dark color scheme for a light one, or make it follow the system
   theme -- it's one `<style>` block in `runner.py`.
 

@@ -10,7 +10,7 @@ slug = "docean-setup-guide"
 title = "DigitalOcean Studio Setup Guide"
 description = "A walkthrough app for running Imbue Studio on your own DigitalOcean droplets, built alongside the boweiliu/setup-docean-studio guide it renders"
 thumbnail = "template.svg"
-version = "v1"
+version = "v2"
 
 # How this template is DERIVED from the workspace it came from. An
 # update re-runs this recipe rather than diffing two repos, which is what
@@ -65,8 +65,8 @@ summary = "this template is tied to the boweiliu/setup-docean-studio guide's con
 resolution = "useful as-is to someone following that guide, or adapt the renderer (markdown bundling + markdown-it-py + copy/copy-to-agent-chat buttons) for a different guide; the Overview page's Known-issues callout (KNOWN_ISSUES in runner.py) is a hardcoded snapshot that should be deleted or updated once those upstream bugs are fixed"
 
 [[requirements.adaptation]]
-summary = "the guide markdown is bundled at publish time, not fetched live from GitHub"
-resolution = "re-copy the markdown under src/docean_setup_guide/assets/docs/ from the source repo to pick up upstream changes; there is no automatic sync"
+summary = "the app only syncs from boweiliu/setup-docean-studio's main branch (GITHUB_RAW_BASE in runner.py)"
+resolution = "pointing the app at a different guide means updating GITHUB_RAW_BASE and the PAGES list together, not just the bundled fallback copy"
 
 # What the included code needs INSTALLED. apt takes bare names: versions
 # are a function of the apt snapshot timestamp, so replaying names at the

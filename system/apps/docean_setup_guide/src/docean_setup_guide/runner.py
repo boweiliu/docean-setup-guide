@@ -1,16 +1,24 @@
 """Walkthrough guide for setting up Imbue Studio on DigitalOcean.
 
-Renders the markdown docs bundled under ``assets/docs/`` (a copy of the
-``boweiliu/setup-docean-studio`` repo's guide) as navigable HTML, with a
-"copy" and "copy to agent chat" button on every command block so the user
-can push the setup along without retyping anything.
+Renders the setup guide markdown as navigable HTML, with a "copy" and "copy
+to agent chat" button on every command block so the user can push the setup
+along without retyping anything. The guide content itself syncs from the
+``boweiliu/setup-docean-studio`` repo's ``main`` branch on its own: a request
+triggers a background refresh when the cache is older than
+``SYNC_INTERVAL_SECONDS``, and there's a manual "Sync now" button for an
+immediate pull. ``assets/docs/`` ships a bundled copy as the day-one /
+offline fallback, used until the first sync lands and again if GitHub is
+unreachable.
 
 Services run from /home/user/workspace (the repo root). Conventions:
 
-- Persistent state: none needed here -- this app has no state, it only
-  renders bundled static markdown.
-- Static assets shipped alongside this file: ``assets/docs/*.md``, read via
-  ``Path(__file__).parent / "assets/docs/..."``.
+- Persistent state: the synced copy of the guide, under ``DATA_DIR``
+  (defined below). ``DATA_DIR`` defaults to ``data/.apps/docean-setup-guide/``
+  but honors the ``DOCEAN_SETUP_GUIDE_DATA_DIR`` env var, so an editing agent
+  can point a throwaway instance at a *copy* of the data instead of the live
+  store. Never hardcode ``data/.apps/docean-setup-guide/`` at a call site.
+- Static assets shipped alongside this file: ``assets/docs/*.md`` (the
+  bundled fallback copy), read via ``Path(__file__).parent / "assets/docs/..."``.
 - Listen port: bind ``PORT`` (defined below), which defaults to this app's
   assigned port but honors the ``DOCEAN_SETUP_GUIDE_PORT`` env var.
 
@@ -22,10 +30,15 @@ URLs, cookies, and service workers all work unmodified.
 import html
 import os
 import re
+import threading
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
-from flask import Flask, Response, abort, send_file
+from flask import Flask, Response, abort, redirect, send_file
 from markdown_it import MarkdownIt
 from werkzeug.serving import run_simple
 
@@ -33,6 +46,17 @@ PORT = int(os.environ.get("DOCEAN_SETUP_GUIDE_PORT", "8086"))
 
 SOURCE_REPO = "https://github.com/boweiliu/setup-docean-studio"
 ASSETS_DIR = Path(__file__).parent / "assets" / "docs"
+
+DATA_DIR = Path(os.environ.get("DOCEAN_SETUP_GUIDE_DATA_DIR", "data/.apps/docean-setup-guide"))
+CACHE_DOCS_DIR = DATA_DIR / "docs"
+SYNC_MARKER = DATA_DIR / "last_synced"
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/boweiliu/setup-docean-studio/main/"
+# How long a synced copy is trusted before a page view triggers a background
+# refresh. A fetch failure (offline, GitHub down) just keeps serving whatever
+# is already cached -- the guide never breaks for lack of network.
+SYNC_INTERVAL_SECONDS = 6 * 60 * 60
+SYNC_FETCH_TIMEOUT_SECONDS = 6
+_sync_lock = threading.Lock()
 
 SHELL_STATIC_MODULES_DIR = Path("system/apps/system_interface/imbue/system_interface/static/_static")
 SHELL_STATIC_MODULE_NAMES = ("app_contract.js", "context_menu.js")
@@ -60,6 +84,74 @@ PAGE_BY_SLUG = {page.slug: page for page in PAGES}
 # "runbooks/01-kvm-host.md" or "01-kvm-host.md" (same-dir relative) resolves
 # regardless of which directory it's written relative to.
 SLUG_BY_BASENAME = {Path(page.source_path).stem: page.slug for page in PAGES}
+
+
+def _doc_path(relative_path: str) -> Path:
+    """The synced copy if one exists yet, otherwise the bundled fallback."""
+    cached = CACHE_DOCS_DIR / relative_path
+    return cached if cached.is_file() else ASSETS_DIR / relative_path
+
+
+def _sync_from_github() -> None:
+    """Pull every page's markdown from the source repo's ``main`` branch.
+
+    Runs synchronously; callers decide whether to run it inline (the manual
+    "Sync now" button) or on a background thread (the automatic refresh). A
+    page that fails to fetch (network down, file renamed upstream) just keeps
+    whatever is already cached or bundled for it -- one bad fetch never takes
+    the whole guide down.
+    """
+    CACHE_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    for page in PAGES:
+        try:
+            with urllib.request.urlopen(
+                GITHUB_RAW_BASE + page.source_path, timeout=SYNC_FETCH_TIMEOUT_SECONDS
+            ) as response:
+                text = response.read().decode("utf-8")
+        except (urllib.error.URLError, TimeoutError, OSError, UnicodeDecodeError):
+            continue
+        target = CACHE_DOCS_DIR / page.source_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+    SYNC_MARKER.write_text(datetime.now(timezone.utc).isoformat())
+
+
+def _seconds_since_sync() -> float:
+    if not SYNC_MARKER.is_file():
+        return float("inf")
+    return time.time() - SYNC_MARKER.stat().st_mtime
+
+
+def _maybe_sync_in_background() -> None:
+    """Kick off a refresh if the cache is stale and nothing is syncing already."""
+    if _seconds_since_sync() < SYNC_INTERVAL_SECONDS:
+        return
+    if not _sync_lock.acquire(blocking=False):
+        return
+
+    def _run() -> None:
+        try:
+            _sync_from_github()
+        finally:
+            _sync_lock.release()
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def _sync_status_text() -> str:
+    age = _seconds_since_sync()
+    if age == float("inf"):
+        return "Not synced yet -- showing the bundled copy."
+    minutes = int(age // 60)
+    if minutes < 1:
+        when = "just now"
+    elif minutes < 60:
+        when = f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    else:
+        hours = minutes // 60
+        when = f"{hours} hour{'s' if hours != 1 else ''} ago"
+    return f"Synced from GitHub {when}."
+
 
 KNOWN_ISSUES = [
     ("runbooks/05-production-ux.md", "the Goal paragraph's line wrap starts a line "
@@ -174,6 +266,11 @@ PAGE_CSS = """<style>
   }
   .run-everything h2 { border-top: none; margin-top: 0; padding-top: 0; font-size: 15px; }
   .run-everything pre { white-space: pre-wrap; }
+  .sync-status {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    font-size: 12.5px; color: #8b93a3; margin: 4px 0 18px;
+  }
+  .sync-status form { margin: 0; }
 </style>"""
 
 _MD = MarkdownIt("commonmark").enable("table")
@@ -194,9 +291,9 @@ def _rewrite_link(match: re.Match) -> str:
 
 
 def _render_markdown(relative_path: str) -> str:
-    text = (ASSETS_DIR / relative_path).read_text()
-    html = _MD.render(text)
-    return re.sub(r'href="([^"]+)"', _rewrite_link, html)
+    text = _doc_path(relative_path).read_text()
+    rendered = _MD.render(text)
+    return re.sub(r'href="([^"]+)"', _rewrite_link, rendered)
 
 
 def _nav_html(current_slug: str) -> str:
@@ -249,9 +346,23 @@ def _run_everything_html() -> str:
     )
 
 
+def _sync_status_html() -> str:
+    return (
+        '<div class="sync-status">'
+        f"<span>{html.escape(_sync_status_text())}</span>"
+        '<form method="post" action="/sync">'
+        '<button class="code-btn" type="submit">Sync now</button>'
+        "</form></div>"
+    )
+
+
 def _page_html(page: Page) -> str:
     body = _render_markdown(page.source_path)
-    issues = (_run_everything_html() + _known_issues_html()) if page.slug == "overview" else ""
+    issues = (
+        (_sync_status_html() + _run_everything_html() + _known_issues_html())
+        if page.slug == "overview"
+        else ""
+    )
     return (
         "<!doctype html><html><head>"
         f"<title>{page.nav_title} - Studio on DO Setup Guide</title>"
@@ -276,7 +387,14 @@ def _guide(slug: str) -> Response:
     page = PAGE_BY_SLUG.get(slug)
     if page is None:
         abort(404)
+    _maybe_sync_in_background()
     return Response(_page_html(page), mimetype="text/html")
+
+
+@app.route("/sync", methods=["POST"])
+def sync_now() -> Response:
+    _sync_from_github()
+    return redirect("/guide/overview")
 
 
 @app.route("/_static/<basename>")
@@ -295,6 +413,7 @@ def health() -> Response:
 
 
 def main() -> None:
+    _maybe_sync_in_background()
     run_simple("127.0.0.1", PORT, app, threaded=True, use_reloader=False, use_debugger=False)
 
 
